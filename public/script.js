@@ -1,11 +1,11 @@
 // --- LiveKit Configuration ---
 const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud"; 
 
-// Fungsi helper untuk mendapatkan SDK LiveKit secara aman
+// Helper SDK LiveKit
 function getLiveKitSDK() {
   const sdk = window.LivekitClient || window.LiveKit;
   if (!sdk) {
-    throw new Error("SDK LiveKit belum terisi/loaded dari CDN. Pastikan tag script CDN LiveKit ada di HTML sebelum script.js.");
+    throw new Error("SDK LiveKit belum loaded dari CDN.");
   }
   return sdk;
 }
@@ -170,12 +170,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   populateFrameOptions();
 
-  // Konfigurasi elemen video agar tidak terblokir autoplay browser
   [localVideo, remoteVideo].forEach(vid => {
     if (vid) {
       vid.autoplay = true;
       vid.playsInline = true;
-      vid.muted = true; // Diperlukan agar autoplay video streaming berjalan tanpa hambatan kebijakan browser
+      vid.muted = true;
     }
   });
 
@@ -212,7 +211,6 @@ document.addEventListener('DOMContentLoaded', () => {
   updateInteractivePreview();
 });
 
-// --- Populasi Otomatis Opsi Frame ---
 function populateFrameOptions() {
   const selectFrame = document.getElementById('select-frame-theme');
   if (!selectFrame) return;
@@ -233,7 +231,6 @@ function populateFrameOptions() {
   }
 }
 
-// --- Theme / Light Mode ---
 function initTheme() {
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'light') {
@@ -252,7 +249,6 @@ function toggleTheme() {
   document.getElementById('btn-theme-toggle').innerText = isLight ? '☀️ Mode Gelap' : '🌙 Mode Terang';
 }
 
-// --- View Router ---
 function switchView(viewId) {
   ['view-connect', 'view-config', 'view-capture', 'view-result'].forEach(id => {
     const elem = document.getElementById(id);
@@ -282,14 +278,11 @@ function switchView(viewId) {
   }
 }
 
-// --- Dynamic Token Fetcher ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
     const query = new URLSearchParams({
       roomName: roomName,
-      room: roomName,
-      identity: identity,
-      username: identity
+      identity: identity
     }).toString();
 
     const response = await fetch(`/api/get-token?${query}`);
@@ -301,13 +294,13 @@ async function fetchLiveKitToken(roomName, identity) {
 
     return data.token;
   } catch (error) {
-    console.error('Error saat mengambil token LiveKit:', error);
-    alert('Gagal terhubung ke backend token: ' + error.message);
+    console.error('Error token:', error);
+    alert('Gagal terhubung ke server token: ' + error.message);
     throw error;
   }
 }
 
-// --- LiveKit Room Connection ---
+// --- LiveKit Connection FIX ---
 async function initLiveKit(roomName, isHost) {
   state.isHost = isHost;
   state.roomName = roomName;
@@ -324,14 +317,24 @@ async function initLiveKit(roomName, isHost) {
       dynacast: true,
     });
 
-    state.room.on(LK.RoomEvent.TrackSubscribed, handleTrackSubscribed);
-    state.room.on(LK.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+    // Subskripsi Track dengan aman
+    state.room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (track.kind === 'video') {
+        track.attach(remoteVideo);
+        remoteVideo.play().catch(e => console.warn('Autoplay remote:', e));
+      }
+    });
+
+    state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
+      if (track.kind === 'video') {
+        track.detach(remoteVideo);
+      }
+    });
+
     state.room.on(LK.RoomEvent.DataReceived, handleDataReceived);
     
     state.room.on(LK.RoomEvent.ParticipantConnected, (participant) => {
-      console.log('Pasangan terhubung:', participant?.identity);
       updateStatus('Pasangan Terhubung!', 'emerald');
-      
       if (state.isHost) {
         document.getElementById('btn-to-config').classList.remove('hidden');
         broadcastConfig();
@@ -355,11 +358,12 @@ async function initLiveKit(roomName, isHost) {
         document.getElementById('guest-waiting-msg').classList.remove('hidden');
       }
 
-      // Sync track video pasangan jika sudah dipublikasikan sebelumnya
+      // Hubungkan ulang video remote jika sudah terdaftar
       state.room.remoteParticipants.forEach(participant => {
         participant.trackPublications.forEach(pub => {
-          if (pub.track && pub.track.kind === LK.Track.Kind.Video) {
-            handleTrackSubscribed(pub.track, pub, participant);
+          if (pub.track && pub.track.kind === 'video') {
+            pub.track.attach(remoteVideo);
+            remoteVideo.play().catch(e => console.warn('Autoplay existing remote:', e));
           }
         });
       });
@@ -380,22 +384,6 @@ function joinRoom() {
   const targetId = document.getElementById('input-room-id').value.trim().toUpperCase();
   if (!targetId) return alert('Masukkan Kode Room lawan!');
   initLiveKit(targetId, false);
-}
-
-// --- Penanganan Track Video Pasangan (Mencegah Freeze) ---
-function handleTrackSubscribed(track, publication, participant) {
-  const LK = getLiveKitSDK();
-  if (track.kind === LK.Track.Kind.Video || (publication && publication.kind === 'video')) {
-    track.attach(remoteVideo);
-    remoteVideo.play().catch(e => console.warn('Autoplay remote video:', e));
-  }
-}
-
-function handleTrackUnsubscribed(track, publication, participant) {
-  const LK = getLiveKitSDK();
-  if (track.kind === LK.Track.Kind.Video || (publication && publication.kind === 'video')) {
-    track.detach(remoteVideo);
-  }
 }
 
 function handleDataReceived(payload, participant) {
@@ -437,7 +425,6 @@ function updateStatus(text, type) {
   }
 }
 
-// --- Frame & Grid Selection ---
 function setGridCount(count) {
   state.gridCount = count;
   updateConfigUI();
@@ -503,7 +490,7 @@ function broadcastConfig() {
   }
 }
 
-// --- Camera Stream & Canvas Loop ---
+// --- Camera & Canvas Processing FIX ---
 async function startPhotobooth() {
   if (state.isHost) {
     sendPeerData({ type: 'NAVIGATE_TO_CAMERA' });
@@ -514,13 +501,12 @@ async function startPhotobooth() {
 async function startPhotoboothLocal() {
   try {
     if (state.room) {
-      // Aktifkan kamera lokal dan pastikan terhubung
       await state.room.localParticipant.setCameraEnabled(true);
       
       const tracks = Array.from(state.room.localParticipant.videoTrackPublications.values());
       if (tracks.length > 0 && tracks[0].track) {
         tracks[0].track.attach(localVideo);
-        localVideo.play().catch(e => console.warn('Autoplay local video:', e));
+        localVideo.play().catch(e => console.warn('Autoplay local:', e));
       }
     }
 
@@ -563,7 +549,7 @@ function renderCanvasLoop() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 1. Kamera Lokal (di-mirror)
+  // Kamera Lokal (kiri, mirrored)
   if (localVideo && localVideo.readyState >= 2) {
     ctx.save();
     ctx.translate(canvas.width / 2, 0);
@@ -575,7 +561,7 @@ function renderCanvasLoop() {
     ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
   }
 
-  // 2. Kamera Pasangan
+  // Kamera Remot Pasangan (kanan)
   if (remoteVideo && remoteVideo.readyState >= 2) {
     drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
   } else {
@@ -597,7 +583,6 @@ function renderCanvasLoop() {
   requestAnimationFrame(renderCanvasLoop);
 }
 
-// --- Capture & Countdown Engine ---
 function triggerSyncedCapture() {
   if (state.activeSlot >= state.gridCount) return;
   sendPeerData({ type: 'START_COUNTDOWN' });
@@ -688,7 +673,6 @@ function renderSidebarSlots() {
   }
 }
 
-// --- Result & PNG Export ---
 function showResultView() {
   state.isLooping = false;
   switchView('view-result');
@@ -793,7 +777,6 @@ function resetSession() {
   switchView('view-connect');
 }
 
-// --- Render & Export Video ---
 async function downloadLivePhotoVideo() {
   const btn = document.getElementById('btn-download-video');
   const originalText = btn.innerText;
@@ -810,21 +793,10 @@ async function downloadLivePhotoVideo() {
   const frameImg = await loadImage(config.imageSrc);
   const videoElements = document.querySelectorAll('#final-video-slots video');
 
-  const mp4Types = [
-    'video/mp4;codecs=avc1.42E01E',
-    'video/mp4',
-    'video/mp4;codecs=h264'
-  ];
-  
-  let selectedMime = mp4Types.find(type => MediaRecorder.isTypeSupported(type)) || '';
-  let fileExtension = 'mp4';
-
-  if (!selectedMime) {
-    selectedMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-      ? 'video/webm;codecs=vp9' 
-      : 'video/webm';
-    fileExtension = 'webm';
-  }
+  let selectedMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
+    ? 'video/webm;codecs=vp9' 
+    : 'video/webm';
+  let fileExtension = 'webm';
 
   const stream = renderCanvas.captureStream(30);
   const recorder = new MediaRecorder(stream, { mimeType: selectedMime });
