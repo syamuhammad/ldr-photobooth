@@ -10,7 +10,7 @@ function getLiveKitSDK() {
   return sdk;
 }
 
-// --- Database Konfigurasi Koordinat Canva ---
+// --- Database Konfigurasi Koordinat Canvas ---
 const FRAME_DATABASE = {
   green_lining: {
     label: "Green Lining",
@@ -154,10 +154,9 @@ const state = {
   gridCount: 2,
   frameTheme: 'green_lining',
   activeSlot: 0,
-  capturedSlots: [],
+  capturedSlots: [], // Berisi string base64 / URL gambar snapshot per slot
   isHost: false,
-  isLooping: false,
-  isRecording: false // Status untuk mencegah freeze saat merekam
+  isLooping: false
 };
 
 // --- DOM Elements ---
@@ -191,9 +190,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-start-camera')?.addEventListener('click', startPhotobooth);
   document.getElementById('btn-take-photo')?.addEventListener('click', triggerSyncedCapture);
-  document.getElementById('btn-download-png')?.addEventListener('click', downloadPNG);
-  document.getElementById('btn-download-video')?.addEventListener('click', downloadLivePhotoVideo);
+  document.getElementById('btn-download-png')?.addEventListener('click', downloadFinalPhotostrip);
   document.getElementById('btn-reset')?.addEventListener('click', resetSession);
+
+  // Sembunyikan tombol download video lama jika ada di HTML agar tidak bikin bingung
+  const btnVideo = document.getElementById('btn-download-video');
+  if (btnVideo) btnVideo.style.display = 'none';
 
   document.querySelectorAll('.grid-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -282,18 +284,13 @@ function switchView(viewId) {
 
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    const query = new URLSearchParams({
-      roomName: roomName,
-      identity: identity
-    }).toString();
-
+    const query = new URLSearchParams({ roomName, identity }).toString();
     const response = await fetch(`/api/get-token?${query}`);
     const data = await response.json();
 
     if (!response.ok || !data.token) {
       throw new Error(data.error || 'Gagal mengambil token dari server');
     }
-
     return data.token;
   } catch (error) {
     console.error('Error token:', error);
@@ -338,7 +335,7 @@ async function initLiveKit(roomName, isHost) {
       });
     });
 
-    state.room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === 'video') {
         track.attach(remoteVideo);
         remoteVideo.play().catch(e => console.warn('Autoplay remote:', e));
@@ -455,9 +452,7 @@ function updateConfigUI() {
   });
 
   const selectFrame = document.getElementById('select-frame-theme');
-  if (selectFrame) {
-    selectFrame.value = state.frameTheme;
-  }
+  if (selectFrame) selectFrame.value = state.frameTheme;
 }
 
 function updateInteractivePreview() {
@@ -554,13 +549,7 @@ function drawCover(targetCtx, element, x, y, w, h) {
 }
 
 function renderCanvasLoop() {
-  // Jika sedang merekam atau tidak looping, jangan render agar frame tidak freeze/berat
-  if (!state.isLooping || state.isRecording || !ctx || !canvas) {
-    if (state.isLooping && !state.isRecording) {
-      requestAnimationFrame(renderCanvasLoop);
-    }
-    return;
-  }
+  if (!state.isLooping || !ctx || !canvas) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -600,7 +589,7 @@ function renderCanvasLoop() {
 }
 
 function triggerSyncedCapture() {
-  if (state.activeSlot >= state.gridCount || state.isRecording) return;
+  if (state.activeSlot >= state.gridCount) return;
   sendPeerData({ type: 'START_COUNTDOWN' });
   runCountdown();
 }
@@ -620,51 +609,23 @@ function runCountdown() {
     } else {
       clearInterval(timer);
       if (overlay) overlay.classList.add('hidden');
-      startLivePhotoRecord();
+      takeSnapshot();
     }
   }, 1000);
 }
 
-function startLivePhotoRecord() {
-  // Tandai sedang merekam agar renderCanvasLoop jeda sebentar (mencegah freeze)
-  state.isRecording = true;
+// --- Snapshot Super Ringan & Anti-Freeze ---
+function takeSnapshot() {
+  // Ambil gambar langsung dari canvas secara instan tanpa MediaRecorder
+  const dataUrl = canvas.toDataURL('image/png');
 
-  const badge = document.getElementById('recording-badge');
-  if (badge) badge.classList.remove('hidden');
+  state.capturedSlots[state.activeSlot] = dataUrl;
+  state.activeSlot++;
+  renderSidebarSlots();
 
-  const stream = canvas.captureStream(30);
-  let mimeType = 'video/webm';
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-    mimeType = 'video/webm;codecs=vp9';
+  if (state.activeSlot >= state.gridCount) {
+    setTimeout(showResultView, 600);
   }
-
-  const recorder = new MediaRecorder(stream, { mimeType });
-  const chunks = [];
-
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = () => {
-    if (badge) badge.classList.add('hidden');
-    
-    const blob = new Blob(chunks, { type: 'video/webm' });
-    const videoUrl = URL.createObjectURL(blob);
-    const imageUrl = canvas.toDataURL('image/png');
-
-    state.capturedSlots[state.activeSlot] = { blob, videoUrl, imageUrl };
-    
-    state.activeSlot++;
-    renderSidebarSlots();
-
-    // Selesai merekam, aktifkan kembali render loop video
-    state.isRecording = false;
-    requestAnimationFrame(renderCanvasLoop);
-
-    if (state.activeSlot >= state.gridCount) {
-      setTimeout(showResultView, 800);
-    }
-  };
-
-  recorder.start();
-  setTimeout(() => recorder.stop(), 3000);
 }
 
 function renderSidebarSlots() {
@@ -673,7 +634,7 @@ function renderSidebarSlots() {
   container.innerHTML = '';
 
   for (let i = 0; i < state.gridCount; i++) {
-    const slotData = state.capturedSlots[i];
+    const imgData = state.capturedSlots[i];
     const isActive = i === state.activeSlot;
 
     const slotDiv = document.createElement('div');
@@ -681,10 +642,10 @@ function renderSidebarSlots() {
       isActive ? 'border-rose-500 bg-rose-950/20' : 'border-slate-800 bg-slate-950'
     }`;
 
-    if (slotData) {
+    if (imgData) {
       slotDiv.innerHTML = `
         <span class="text-xs font-bold text-slate-400">Slot ${i + 1} ✓</span>
-        <img src="${slotData.imageUrl}" class="w-full aspect-[4/3] object-cover rounded-lg border border-slate-800">
+        <img src="${imgData}" class="w-full aspect-[4/3] object-cover rounded-lg border border-slate-800">
       `;
     } else {
       slotDiv.innerHTML = `
@@ -700,7 +661,6 @@ function renderSidebarSlots() {
 
 function showResultView() {
   state.isLooping = false;
-  state.isRecording = false;
   switchView('view-result');
 
   const config = FRAME_DATABASE[state.frameTheme][state.gridCount];
@@ -715,33 +675,26 @@ function showResultView() {
   wrapper.style.width = `${renderWidth}px`;
   wrapper.style.height = `${renderHeight}px`;
 
-  overlayImg.onerror = () => {
-    overlayImg.style.display = 'none';
-  };
-  overlayImg.onload = () => {
-    overlayImg.style.display = 'block';
-  };
+  overlayImg.onerror = () => { overlayImg.style.display = 'none'; };
+  overlayImg.onload = () => { overlayImg.style.display = 'block'; };
   overlayImg.src = config.imageSrc;
 
+  // Tampilkan hasil foto per slot di halaman hasil akhir
   videoContainer.innerHTML = '';
 
-  state.capturedSlots.forEach((slot, i) => {
+  state.capturedSlots.forEach((imgData, i) => {
     const slotConfig = config.slots[i];
-    const video = document.createElement('video');
-    video.src = slot.videoUrl;
-    video.autoplay = true;
-    video.loop = true;
-    video.muted = true;
-    video.playsInline = true;
+    const img = document.createElement('img');
+    img.src = imgData;
     
-    video.style.position = 'absolute';
-    video.style.left = `${(slotConfig.x / config.canvasWidth) * 100}%`;
-    video.style.top = `${(slotConfig.y / config.canvasHeight) * 100}%`;
-    video.style.width = `${(slotConfig.w / config.canvasWidth) * 100}%`;
-    video.style.height = `${(slotConfig.h / config.canvasHeight) * 100}%`;
-    video.className = 'object-cover';
+    img.style.position = 'absolute';
+    img.style.left = `${(slotConfig.x / config.canvasWidth) * 100}%`;
+    img.style.top = `${(slotConfig.y / config.canvasHeight) * 100}%`;
+    img.style.width = `${(slotConfig.w / config.canvasWidth) * 100}%`;
+    img.style.height = `${(slotConfig.h / config.canvasHeight) * 100}%`;
+    img.className = 'object-cover rounded';
 
-    videoContainer.appendChild(video);
+    videoContainer.appendChild(img);
   });
 }
 
@@ -755,7 +708,7 @@ function loadImage(src) {
   });
 }
 
-async function downloadPNG() {
+async function downloadFinalPhotostrip() {
   const config = FRAME_DATABASE[state.frameTheme][state.gridCount];
   const outCanvas = document.createElement('canvas');
   const outCtx = outCanvas.getContext('2d');
@@ -766,7 +719,7 @@ async function downloadPNG() {
   outCtx.fillStyle = '#020617';
   outCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
 
-  const slotPromises = state.capturedSlots.map(slot => loadImage(slot.imageUrl));
+  const slotPromises = state.capturedSlots.map(imgData => loadImage(imgData));
   const framePromise = loadImage(config.imageSrc);
 
   const [slotImages, frameImg] = await Promise.all([
@@ -791,7 +744,7 @@ async function downloadPNG() {
   outCtx.fillText('LDR PHOTOBOOTH HD • ' + new Date().toLocaleDateString('id-ID'), config.canvasWidth / 2, config.canvasHeight - 40);
 
   const link = document.createElement('a');
-  link.download = `LDR-Photobooth-${Date.now()}.png`;
+  link.download = `LDR-Photostrip-${Date.now()}.png`;
   link.href = outCanvas.toDataURL('image/png');
   link.click();
 }
@@ -803,79 +756,5 @@ function resetSession() {
   state.activeSlot = 0;
   state.capturedSlots = [];
   state.isLooping = false;
-  state.isRecording = false;
   switchView('view-connect');
-}
-
-async function downloadLivePhotoVideo() {
-  const btn = document.getElementById('btn-download-video');
-  if (!btn) return;
-  const originalText = btn.innerText;
-  btn.innerText = 'Menyiapkan Video...';
-  btn.disabled = true;
-
-  const config = FRAME_DATABASE[state.frameTheme][state.gridCount];
-  const renderCanvas = document.createElement('canvas');
-  const renderCtx = renderCanvas.getContext('2d');
-
-  renderCanvas.width = config.canvasWidth;
-  renderCanvas.height = config.canvasHeight;
-
-  const frameImg = await loadImage(config.imageSrc);
-  const videoElements = document.querySelectorAll('#final-video-slots video');
-
-  let selectedMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-    ? 'video/webm;codecs=vp9' 
-    : 'video/webm';
-  let fileExtension = 'webm';
-
-  const stream = renderCanvas.captureStream(30);
-  const recorder = new MediaRecorder(stream, { mimeType: selectedMime });
-  const chunks = [];
-
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: selectedMime });
-    const link = document.createElement('a');
-    link.download = `LDR-LivePhoto-${Date.now()}.${fileExtension}`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-
-    btn.innerText = originalText;
-    btn.disabled = false;
-  };
-
-  let isRendering = true;
-  function renderFrame() {
-    if (!isRendering) return;
-
-    renderCtx.fillStyle = '#020617';
-    renderCtx.fillRect(0, 0, renderCanvas.width, renderCanvas.height);
-
-    videoElements.forEach((vid, i) => {
-      const slot = config.slots[i];
-      if (slot && vid.readyState >= 2) {
-        drawCover(renderCtx, vid, slot.x, slot.y, slot.w, slot.h);
-      }
-    });
-
-    if (frameImg) {
-      renderCtx.drawImage(frameImg, 0, 0, config.canvasWidth, config.canvasHeight);
-    }
-
-    renderCtx.fillStyle = '#94a3b8';
-    renderCtx.font = 'bold 24px sans-serif';
-    renderCtx.textAlign = 'center';
-    renderCtx.fillText('LDR PHOTOBOOTH HD • ' + new Date().toLocaleDateString('id-ID'), config.canvasWidth / 2, config.canvasHeight - 40);
-
-    requestAnimationFrame(renderFrame);
-  }
-
-  recorder.start(100);
-  renderFrame();
-
-  setTimeout(() => {
-    isRendering = false;
-    recorder.stop();
-  }, 3400);
 }
