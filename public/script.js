@@ -156,7 +156,8 @@ const state = {
   activeSlot: 0,
   capturedSlots: [],
   isHost: false,
-  isLooping: false
+  isLooping: false,
+  isRecording: false // Status untuk mencegah freeze saat merekam
 };
 
 // --- DOM Elements ---
@@ -313,7 +314,6 @@ async function initLiveKit(roomName, isHost) {
     const LK = getLiveKitSDK();
     const token = await fetchLiveKitToken(state.roomName, state.identity);
     
-    // Matikan koneksi lama jika ada
     if (state.room) {
       await state.room.disconnect();
     }
@@ -323,13 +323,11 @@ async function initLiveKit(roomName, isHost) {
       dynacast: true,
     });
 
-    // 1. Event Listener: Terhubung ke Room
     state.room.on(LK.RoomEvent.Connected, () => {
       document.getElementById('my-peer-id').innerText = state.roomName;
       document.getElementById('display-room-id').classList.remove('hidden');
       updateStatus('Room Siap', 'indigo');
 
-      // Ambil video remote jika lawan sudah terhubung sebelumnya
       state.room.remoteParticipants.forEach(participant => {
         participant.trackPublications.forEach(pub => {
           if (pub.isSubscribed && pub.track && pub.track.kind === 'video') {
@@ -340,7 +338,6 @@ async function initLiveKit(roomName, isHost) {
       });
     });
 
-    // 2. Event Listener: Track Subscribed
     state.room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track.kind === 'video') {
         track.attach(remoteVideo);
@@ -349,17 +346,14 @@ async function initLiveKit(roomName, isHost) {
       }
     });
 
-    // 3. Event Listener: Track Unsubscribed
     state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
       if (track.kind === 'video') {
         track.detach(remoteVideo);
       }
     });
 
-    // 4. Event Listener: Data Received
     state.room.on(LK.RoomEvent.DataReceived, handleDataReceived);
     
-    // 5. Event Listener: Participant Connected
     state.room.on(LK.RoomEvent.ParticipantConnected, () => {
       updateStatus('Pasangan Terhubung!', 'emerald');
       if (state.isHost) {
@@ -370,12 +364,10 @@ async function initLiveKit(roomName, isHost) {
       }
     });
 
-    // 6. Event Listener: Participant Disconnected
     state.room.on(LK.RoomEvent.ParticipantDisconnected, () => {
       updateStatus('Pasangan Terputus', 'rose');
     });
 
-    // Proses menghubungkan ke WebSocket LiveKit
     await state.room.connect(LIVEKIT_URL, token);
 
   } catch (err) {
@@ -515,7 +507,6 @@ async function startPhotobooth() {
 async function startPhotoboothLocal() {
   try {
     if (state.room) {
-      // Aktifkan Kamera Lokal LiveKit secara aman
       await state.room.localParticipant.setCameraEnabled(true);
       
       const localTracks = Array.from(state.room.localParticipant.videoTrackPublications.values());
@@ -528,7 +519,6 @@ async function startPhotoboothLocal() {
     switchView('view-capture');
     renderSidebarSlots();
     
-    // Mulai Canvas Loop
     if (!state.isLooping) {
       state.isLooping = true;
       requestAnimationFrame(renderCanvasLoop);
@@ -564,7 +554,13 @@ function drawCover(targetCtx, element, x, y, w, h) {
 }
 
 function renderCanvasLoop() {
-  if (!state.isLooping || !ctx || !canvas) return;
+  // Jika sedang merekam atau tidak looping, jangan render agar frame tidak freeze/berat
+  if (!state.isLooping || state.isRecording || !ctx || !canvas) {
+    if (state.isLooping && !state.isRecording) {
+      requestAnimationFrame(renderCanvasLoop);
+    }
+    return;
+  }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -604,7 +600,7 @@ function renderCanvasLoop() {
 }
 
 function triggerSyncedCapture() {
-  if (state.activeSlot >= state.gridCount) return;
+  if (state.activeSlot >= state.gridCount || state.isRecording) return;
   sendPeerData({ type: 'START_COUNTDOWN' });
   runCountdown();
 }
@@ -630,6 +626,9 @@ function runCountdown() {
 }
 
 function startLivePhotoRecord() {
+  // Tandai sedang merekam agar renderCanvasLoop jeda sebentar (mencegah freeze)
+  state.isRecording = true;
+
   const badge = document.getElementById('recording-badge');
   if (badge) badge.classList.remove('hidden');
 
@@ -654,6 +653,10 @@ function startLivePhotoRecord() {
     
     state.activeSlot++;
     renderSidebarSlots();
+
+    // Selesai merekam, aktifkan kembali render loop video
+    state.isRecording = false;
+    requestAnimationFrame(renderCanvasLoop);
 
     if (state.activeSlot >= state.gridCount) {
       setTimeout(showResultView, 800);
@@ -697,6 +700,7 @@ function renderSidebarSlots() {
 
 function showResultView() {
   state.isLooping = false;
+  state.isRecording = false;
   switchView('view-result');
 
   const config = FRAME_DATABASE[state.frameTheme][state.gridCount];
@@ -799,6 +803,7 @@ function resetSession() {
   state.activeSlot = 0;
   state.capturedSlots = [];
   state.isLooping = false;
+  state.isRecording = false;
   switchView('view-connect');
 }
 
