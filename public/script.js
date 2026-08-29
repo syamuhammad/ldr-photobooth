@@ -1,12 +1,12 @@
 // --- LiveKit Configuration ---
-const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud";
+const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud"; 
 
 // --- Database Konfigurasi Koordinat Canva ---
 const FRAME_DATABASE = {
   green_lining: {
     label: "Green Lining",
     2: {
-      imageSrc: './assets/Frame/2%20Grid/Green%20Lining.png',
+      imageSrc: './assets/Frame/2 grid/Green Lining.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -15,7 +15,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3%20Grid/Green%20Lining.png',
+      imageSrc: './assets/Frame/3 grid/Green Lining.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -25,7 +25,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4%20Grid/Green%20Lining.png',
+      imageSrc: './assets/Frame/4 grid/Green Lining.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -39,7 +39,7 @@ const FRAME_DATABASE = {
   sunset: {
     label: "Sunset",
     2: {
-      imageSrc: './assets/Frame/2%20Grid/Sunset.png',
+      imageSrc: './assets/Frame/2 grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -48,7 +48,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3%20Grid/Sunset.png',
+      imageSrc: './assets/Frame/3 grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -58,7 +58,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4%20Grid/Sunset.png',
+      imageSrc: './assets/Frame/4 grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -72,7 +72,7 @@ const FRAME_DATABASE = {
   night_galaxy: {
     label: "Night Galaxy",
     2: {
-      imageSrc: './assets/Frame/2%20Grid/Night%20Galaxy.png',
+      imageSrc: './assets/Frame/2 grid/Night Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -81,7 +81,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3%20Grid/Night%20Galaxy.png',
+      imageSrc: './assets/Frame/3 grid/Night Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -91,7 +91,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4%20Grid/Night%20Galaxy.png',
+      imageSrc: './assets/Frame/4 grid/Night Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -105,7 +105,7 @@ const FRAME_DATABASE = {
   dark_red: {
     label: "Dark Red",
     2: {
-      imageSrc: './assets/Frame/2%20Grid/Dark%20Red.png',
+      imageSrc: './assets/Frame/2 grid/Dark Red.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -114,7 +114,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3%20Grid/Dark%20Red.png',
+      imageSrc: './assets/Frame/3 grid/Dark Red.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -124,7 +124,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4%20Grid/Dark%20Red.png',
+      imageSrc: './assets/Frame/4 grid/Dark Red.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -161,10 +161,19 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   populateFrameOptions();
 
+  // Pengaturan elemen video untuk mencegah freeze autoplay
+  if (localVideo) {
+    localVideo.muted = true;
+    localVideo.playsInline = true;
+  }
+  if (remoteVideo) {
+    remoteVideo.playsInline = true;
+  }
+
   document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('btn-create-room').addEventListener('click', createRoom);
   document.getElementById('btn-join-room').addEventListener('click', joinRoom);
-  document.getElementById('btn-to-config').addEventListener('click', navigateToConfig);
+  document.getElementById('btn-to-config').addEventListener('click', () => switchView('view-config'));
   document.getElementById('btn-start-camera').addEventListener('click', startPhotobooth);
   document.getElementById('btn-take-photo').addEventListener('click', triggerSyncedCapture);
   document.getElementById('btn-download-png').addEventListener('click', downloadPNG);
@@ -172,18 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-reset').addEventListener('click', resetSession);
 
   document.querySelectorAll('.grid-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      if (!state.isHost) return;
-      setGridCount(parseInt(e.target.dataset.grid));
-    });
+    btn.addEventListener('click', (e) => setGridCount(parseInt(e.target.dataset.grid)));
   });
 
   const selectFrame = document.getElementById('select-frame-theme');
   if (selectFrame) {
-    selectFrame.addEventListener('change', (e) => {
-      if (!state.isHost) return;
-      setFrameTheme(e.target.value);
-    });
+    selectFrame.addEventListener('change', (e) => setFrameTheme(e.target.value));
   }
 
   updateConfigUI();
@@ -244,10 +247,12 @@ function switchView(viewId) {
   });
 }
 
-// --- LiveKit Token Helper (Vercel Backend URL) ---
+// --- Dynamic Token Fetcher ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    const response = await fetch(`https://ldr-photobooth-phi.vercel.app/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
+    // Jalur relatif serbaguna: bekerja di localhost maupun domain Vercel
+    const apiUrl = `/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`;
+    const response = await fetch(apiUrl);
     const data = await response.json();
 
     if (!response.ok) {
@@ -257,7 +262,7 @@ async function fetchLiveKitToken(roomName, identity) {
     return data.token;
   } catch (error) {
     console.error('Error saat mengambil token LiveKit:', error);
-    alert('Gagal terhubung ke backend server token Vercel.');
+    alert('Gagal terhubung ke backend server token. Pastikan server backend aktif.');
     throw error;
   }
 }
@@ -271,14 +276,9 @@ async function initLiveKit(roomName, isHost) {
 
   try {
     const token = await fetchLiveKitToken(state.roomName, state.identity);
-    
-    // Konfigurasi WebRTC dengan resolusi teroptimasi untuk mencegah freeze di HP
     state.room = new LivekitClient.Room({
       adaptiveStream: true,
       dynacast: true,
-      videoCaptureDefaults: {
-        resolution: LivekitClient.VideoPresets.h720.resolution,
-      }
     });
 
     // Event handling LiveKit
@@ -287,25 +287,24 @@ async function initLiveKit(roomName, isHost) {
     state.room.on(LivekitClient.RoomEvent.DataReceived, handleDataReceived);
     state.room.on(LivekitClient.RoomEvent.ParticipantConnected, () => {
       updateStatus('Pasangan Terhubung!', 'emerald');
-      applyRolePermissions();
+      document.getElementById('btn-to-config').classList.remove('hidden');
     });
 
     await state.room.connect(LIVEKIT_URL, token);
     
     document.getElementById('my-peer-id').innerText = state.roomName;
     document.getElementById('display-room-id').classList.remove('hidden');
+    document.getElementById('btn-to-config').classList.remove('hidden');
     updateStatus('Room Siap', 'indigo');
 
     if (state.room.remoteParticipants.size > 0) {
       updateStatus('Pasangan Terhubung!', 'emerald');
     }
 
-    applyRolePermissions();
-
   } catch (err) {
     console.error("LiveKit Error: ", err);
     updateStatus('Error Koneksi', 'rose');
-    alert("Gagal terhubung ke LiveKit Cloud.");
+    alert("Gagal terhubung ke LiveKit Cloud. Silakan periksa koneksi.");
   }
 }
 
@@ -322,40 +321,10 @@ function joinRoom() {
   initLiveKit(targetId, false);
 }
 
-// Menangani hak akses Host vs Guest pada Tombol UI
-function applyRolePermissions() {
-  const btnToConfig = document.getElementById('btn-to-config');
-  const btnStartCamera = document.getElementById('btn-start-camera');
-  const btnTakePhoto = document.getElementById('btn-take-photo');
-  const selectFrame = document.getElementById('select-frame-theme');
-
-  btnToConfig.classList.remove('hidden');
-
-  if (state.isHost) {
-    btnToConfig.innerText = "Lanjut Pilih Frame →";
-    if (btnStartCamera) btnStartCamera.classList.remove('hidden');
-    if (btnTakePhoto) btnTakePhoto.classList.remove('hidden');
-    if (selectFrame) selectFrame.disabled = false;
-  } else {
-    btnToConfig.innerText = "Menunggu Host Memilih Frame...";
-    if (btnStartCamera) btnStartCamera.classList.add('hidden');
-    if (btnTakePhoto) btnTakePhoto.classList.add('hidden');
-    if (selectFrame) selectFrame.disabled = true;
-  }
-}
-
-function navigateToConfig() {
-  if (state.isHost) {
-    sendPeerData({ type: 'NAVIGATE_TO_CONFIG' });
-    switchView('view-config');
-  }
-}
-
-// Penanganan Video Track untuk mengatasi video freeze pada HP
 function handleTrackSubscribed(track, publication, participant) {
   if (track.kind === LivekitClient.Track.Kind.Video) {
     track.attach(remoteVideo);
-    remoteVideo.play().catch(e => console.log("Autoplay video diawali penanganan interaksi:", e));
+    remoteVideo.play().catch(e => console.warn('Autoplay remote video terblokir:', e));
   }
 }
 
@@ -369,8 +338,8 @@ function handleDataReceived(payload, participant) {
   const str = new TextDecoder().decode(payload);
   const data = JSON.parse(str);
 
-  if (data.type === 'NAVIGATE_TO_CONFIG') {
-    switchView('view-config');
+  if (data.type === 'START_COUNTDOWN') {
+    runCountdown();
   } else if (data.type === 'SYNC_CONFIG') {
     state.gridCount = data.gridCount;
     state.frameTheme = data.frameTheme;
@@ -378,8 +347,6 @@ function handleDataReceived(payload, participant) {
     updateInteractivePreview();
   } else if (data.type === 'NAVIGATE_TO_CAMERA') {
     startPhotoboothLocal();
-  } else if (data.type === 'START_COUNTDOWN') {
-    runCountdown();
   }
 }
 
@@ -475,7 +442,7 @@ function broadcastConfig() {
   }
 }
 
-// --- Camera Stream & Canvas Loop (Live Screen Side-by-Side) ---
+// --- Camera Stream & Canvas Loop ---
 async function startPhotobooth() {
   if (state.isHost) {
     sendPeerData({ type: 'NAVIGATE_TO_CAMERA' });
@@ -490,7 +457,7 @@ async function startPhotoboothLocal() {
       const videoTrack = Array.from(state.room.localParticipant.videoTrackPublications.values())[0]?.track;
       if (videoTrack) {
         videoTrack.attach(localVideo);
-        localVideo.play().catch(e => console.log(e));
+        localVideo.play().catch(e => console.warn('Autoplay local video terblokir:', e));
       }
     }
 
@@ -526,13 +493,12 @@ function drawCover(targetCtx, element, x, y, w, h) {
   targetCtx.drawImage(element, sx, sy, sw, sh, x, y, w, h);
 }
 
-// Render Live Screen 1 Layar Terpisah Kirim/Kanan
 function renderCanvasLoop() {
   if (!state.isLooping) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 1. Kamera Saya (Sisi Kiri - Di-mirror)
+  // 1. Kamera Lokal (di-mirror)
   if (localVideo.readyState >= 2) {
     ctx.save();
     ctx.translate(canvas.width / 2, 0);
@@ -544,7 +510,7 @@ function renderCanvasLoop() {
     ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
   }
 
-  // 2. Kamera Pasangan (Sisi Kanan)
+  // 2. Kamera Pasangan (tidak di-mirror)
   if (remoteVideo.readyState >= 2) {
     drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
   } else {
@@ -556,7 +522,6 @@ function renderCanvasLoop() {
     ctx.fillText('Menunggu Pasangan...', (canvas.width * 0.75), canvas.height / 2);
   }
 
-  // Garis Pembatas Sisi Tengah Canvas
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -569,7 +534,6 @@ function renderCanvasLoop() {
 
 // --- Capture & Countdown Engine ---
 function triggerSyncedCapture() {
-  if (!state.isHost) return;
   if (state.activeSlot >= state.gridCount) return;
   sendPeerData({ type: 'START_COUNTDOWN' });
   runCountdown();
