@@ -241,7 +241,7 @@ function switchView(viewId) {
 // --- LiveKit Token Helper (Helper Sementara/Testing) ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    const response = await fetch(`http://localhost:3001/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
+    const response = await fetch(`https://ldr-photobooth-phi.vercel.app/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
     
     const data = await response.json();
 
