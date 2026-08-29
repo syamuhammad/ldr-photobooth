@@ -172,7 +172,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('btn-create-room').addEventListener('click', createRoom);
   document.getElementById('btn-join-room').addEventListener('click', joinRoom);
-  document.getElementById('btn-to-config').addEventListener('click', () => switchView('view-config'));
+  document.getElementById('btn-to-config').addEventListener('click', () => {
+    if (state.isHost) {
+      sendPeerData({ type: 'NAVIGATE_TO_CONFIG' });
+      switchView('view-config');
+    }
+  });
+
   document.getElementById('btn-start-camera').addEventListener('click', startPhotobooth);
   document.getElementById('btn-take-photo').addEventListener('click', triggerSyncedCapture);
   document.getElementById('btn-download-png').addEventListener('click', downloadPNG);
@@ -180,12 +186,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-reset').addEventListener('click', resetSession);
 
   document.querySelectorAll('.grid-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => setGridCount(parseInt(e.target.dataset.grid)));
+    btn.addEventListener('click', (e) => {
+      if (state.isHost) setGridCount(parseInt(e.target.dataset.grid));
+    });
   });
 
   const selectFrame = document.getElementById('select-frame-theme');
   if (selectFrame) {
-    selectFrame.addEventListener('change', (e) => setFrameTheme(e.target.value));
+    selectFrame.addEventListener('change', (e) => {
+      if (state.isHost) setFrameTheme(e.target.value);
+    });
   }
 
   updateConfigUI();
@@ -213,7 +223,7 @@ function populateFrameOptions() {
   }
 }
 
-// --- Theme / Light Mode Management ---
+// --- Theme / Light Mode ---
 function initTheme() {
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'light') {
@@ -244,6 +254,23 @@ function switchView(viewId) {
       elem.classList.remove('flex');
     }
   });
+
+  // Atur visibilitas kontrol khusus Host / Guest
+  if (viewId === 'view-config') {
+    const btnStart = document.getElementById('btn-start-camera');
+    const guestMsg = document.getElementById('guest-config-msg');
+    const selectFrame = document.getElementById('select-frame-theme');
+
+    if (!state.isHost) {
+      btnStart.classList.add('hidden');
+      guestMsg.classList.remove('hidden');
+      selectFrame.disabled = true;
+    } else {
+      btnStart.classList.remove('hidden');
+      guestMsg.classList.add('hidden');
+      selectFrame.disabled = false;
+    }
+  }
 }
 
 // --- Dynamic Token Fetcher ---
@@ -259,15 +286,16 @@ async function fetchLiveKitToken(roomName, identity) {
     return data.token;
   } catch (error) {
     console.error('Error saat mengambil token LiveKit:', error);
-    alert('Gagal terhubung ke backend server token. Pastikan server backend aktif.');
+    alert('Gagal terhubung ke backend token.');
     throw error;
   }
 }
 
 // --- LiveKit Room Connection ---
 async function initLiveKit(roomName, isHost) {
+  state.isHost = isHost;
   state.roomName = roomName;
-  state.identity = isHost ? `user_host_${Date.now()}` : `user_guest_${Date.now()}`;
+  state.identity = isHost ? `host_${Math.floor(Math.random()*10000)}` : `guest_${Math.floor(Math.random()*10000)}`;
 
   updateStatus('Menghubungkan...', 'indigo');
 
@@ -278,7 +306,6 @@ async function initLiveKit(roomName, isHost) {
       dynacast: true,
     });
 
-    // Event handling LiveKit
     state.room.on(LivekitClient.RoomEvent.TrackSubscribed, handleTrackSubscribed);
     state.room.on(LivekitClient.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
     state.room.on(LivekitClient.RoomEvent.DataReceived, handleDataReceived);
@@ -286,19 +313,30 @@ async function initLiveKit(roomName, isHost) {
     state.room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
       console.log('Pasangan terhubung:', participant?.identity);
       updateStatus('Pasangan Terhubung!', 'emerald');
-      document.getElementById('btn-to-config').classList.remove('hidden');
+      
+      if (state.isHost) {
+        document.getElementById('btn-to-config').classList.remove('hidden');
+        broadcastConfig();
+      } else {
+        document.getElementById('guest-waiting-msg').classList.remove('hidden');
+      }
     });
 
     await state.room.connect(LIVEKIT_URL, token);
     
     document.getElementById('my-peer-id').innerText = state.roomName;
     document.getElementById('display-room-id').classList.remove('hidden');
-    document.getElementById('btn-to-config').classList.remove('hidden');
     updateStatus('Room Siap', 'indigo');
 
     if (state.room.remoteParticipants.size > 0) {
       updateStatus('Pasangan Terhubung!', 'emerald');
-      // Jika pasangan sudah ada sebelum kita join, attach videonya
+      if (state.isHost) {
+        document.getElementById('btn-to-config').classList.remove('hidden');
+        broadcastConfig();
+      } else {
+        document.getElementById('guest-waiting-msg').classList.remove('hidden');
+      }
+
       state.room.remoteParticipants.forEach(participant => {
         participant.trackPublications.forEach(pub => {
           if (pub.track && pub.track.kind === LivekitClient.Track.Kind.Video) {
@@ -311,12 +349,10 @@ async function initLiveKit(roomName, isHost) {
   } catch (err) {
     console.error("LiveKit Error: ", err);
     updateStatus('Error Koneksi', 'rose');
-    alert("Gagal terhubung ke LiveKit Cloud. Silakan periksa koneksi.");
   }
 }
 
 function createRoom() {
-  state.isHost = true;
   const randomRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
   initLiveKit(randomRoomCode, true);
 }
@@ -324,19 +360,13 @@ function createRoom() {
 function joinRoom() {
   const targetId = document.getElementById('input-room-id').value.trim().toUpperCase();
   if (!targetId) return alert('Masukkan Kode Room lawan!');
-  state.isHost = false;
   initLiveKit(targetId, false);
 }
 
 function handleTrackSubscribed(track, publication, participant) {
-  console.log('Track terhubung dari partisipan:', participant?.identity);
   if (track.kind === LivekitClient.Track.Kind.Video) {
     track.attach(remoteVideo);
-    remoteVideo.play().then(() => {
-      console.log('Remote video berhasil dimainkan!');
-    }).catch(e => {
-      console.warn('Autoplay remote video terblokir:', e);
-    });
+    remoteVideo.play().catch(e => console.warn('Autoplay remote video:', e));
   }
 }
 
@@ -357,6 +387,8 @@ function handleDataReceived(payload, participant) {
     state.frameTheme = data.frameTheme;
     updateConfigUI();
     updateInteractivePreview();
+  } else if (data.type === 'NAVIGATE_TO_CONFIG') {
+    switchView('view-config');
   } else if (data.type === 'NAVIGATE_TO_CAMERA') {
     startPhotoboothLocal();
   }
@@ -440,11 +472,6 @@ function updateInteractivePreview() {
   const frameImg = document.createElement('img');
   frameImg.src = config.imageSrc;
   frameImg.className = 'absolute inset-0 w-full h-full object-cover z-10 pointer-events-none';
-  
-  frameImg.onerror = () => {
-    console.warn(`[Frame Warning] File gambar tidak ditemukan di path: "${config.imageSrc}".`);
-  };
-
   container.appendChild(frameImg);
 }
 
@@ -469,7 +496,7 @@ async function startPhotoboothLocal() {
       const videoTrack = Array.from(state.room.localParticipant.videoTrackPublications.values())[0]?.track;
       if (videoTrack) {
         videoTrack.attach(localVideo);
-        localVideo.play().catch(e => console.warn('Autoplay local video terblokir:', e));
+        localVideo.play().catch(e => console.warn('Autoplay local video:', e));
       }
     }
 
@@ -522,7 +549,7 @@ function renderCanvasLoop() {
     ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
   }
 
-  // 2. Kamera Pasangan (tidak di-mirror)
+  // 2. Kamera Pasangan
   if (remoteVideo.readyState >= 2) {
     drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
   } else {
@@ -635,7 +662,7 @@ function renderSidebarSlots() {
   }
 }
 
-// --- Result & High-Res PNG Export ---
+// --- Result & PNG Export ---
 function showResultView() {
   state.isLooping = false;
   switchView('view-result');
@@ -651,7 +678,6 @@ function showResultView() {
   wrapper.style.height = `${renderHeight}px`;
 
   overlayImg.onerror = () => {
-    console.warn("Frame overlay tidak ditemukan di:", config.imageSrc);
     overlayImg.style.display = 'none';
   };
   overlayImg.onload = () => {
@@ -686,10 +712,7 @@ function loadImage(src) {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => resolve(img);
-    img.onerror = () => {
-      console.warn(`Gagal memuat gambar dari ${src}`);
-      resolve(null);
-    };
+    img.onerror = () => resolve(null);
     img.src = src;
   });
 }
