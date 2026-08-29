@@ -161,7 +161,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   populateFrameOptions();
 
-  // Pengaturan elemen video untuk mencegah freeze autoplay
   if (localVideo) {
     localVideo.muted = true;
     localVideo.playsInline = true;
@@ -250,7 +249,6 @@ function switchView(viewId) {
 // --- Dynamic Token Fetcher ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    // Jalur relatif serbaguna: bekerja di localhost maupun domain Vercel
     const response = await fetch(`/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
     const data = await response.json();
 
@@ -269,7 +267,7 @@ async function fetchLiveKitToken(roomName, identity) {
 // --- LiveKit Room Connection ---
 async function initLiveKit(roomName, isHost) {
   state.roomName = roomName;
-  state.identity = isHost ? `host-${Math.floor(Math.random()*1000)}` : `guest-${Math.floor(Math.random()*1000)}`;
+  state.identity = isHost ? `user_host_${Date.now()}` : `user_guest_${Date.now()}`;
 
   updateStatus('Menghubungkan...', 'indigo');
 
@@ -284,7 +282,9 @@ async function initLiveKit(roomName, isHost) {
     state.room.on(LivekitClient.RoomEvent.TrackSubscribed, handleTrackSubscribed);
     state.room.on(LivekitClient.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
     state.room.on(LivekitClient.RoomEvent.DataReceived, handleDataReceived);
-    state.room.on(LivekitClient.RoomEvent.ParticipantConnected, () => {
+    
+    state.room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+      console.log('Pasangan terhubung:', participant?.identity);
       updateStatus('Pasangan Terhubung!', 'emerald');
       document.getElementById('btn-to-config').classList.remove('hidden');
     });
@@ -298,6 +298,14 @@ async function initLiveKit(roomName, isHost) {
 
     if (state.room.remoteParticipants.size > 0) {
       updateStatus('Pasangan Terhubung!', 'emerald');
+      // Jika pasangan sudah ada sebelum kita join, attach videonya
+      state.room.remoteParticipants.forEach(participant => {
+        participant.trackPublications.forEach(pub => {
+          if (pub.track && pub.track.kind === LivekitClient.Track.Kind.Video) {
+            handleTrackSubscribed(pub.track, pub, participant);
+          }
+        });
+      });
     }
 
   } catch (err) {
@@ -321,9 +329,14 @@ function joinRoom() {
 }
 
 function handleTrackSubscribed(track, publication, participant) {
+  console.log('Track terhubung dari partisipan:', participant?.identity);
   if (track.kind === LivekitClient.Track.Kind.Video) {
     track.attach(remoteVideo);
-    remoteVideo.play().catch(e => console.warn('Autoplay remote video terblokir:', e));
+    remoteVideo.play().then(() => {
+      console.log('Remote video berhasil dimainkan!');
+    }).catch(e => {
+      console.warn('Autoplay remote video terblokir:', e);
+    });
   }
 }
 
