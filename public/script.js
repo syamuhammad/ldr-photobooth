@@ -242,7 +242,7 @@ function switchView(viewId) {
 async function fetchLiveKitToken(roomName, identity) {
   try {
     const response = await fetch(`https://ldr-photobooth-phi.vercel.app/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
-    
+
     const data = await response.json();
 
     if (!response.ok) {
@@ -252,7 +252,7 @@ async function fetchLiveKitToken(roomName, identity) {
     return data.token;
   } catch (error) {
     console.error('Error saat mengambil token LiveKit:', error);
-    alert('Gagal terhubung ke backend server token. Pastikan server di port 3001 sudah menyala.');
+    alert('Gagal terhubung ke server backend.');
     throw error;
   }
 }
