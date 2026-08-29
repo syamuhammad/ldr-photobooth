@@ -1,6 +1,9 @@
 // --- LiveKit Configuration ---
 const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud"; 
 
+// Access global LiveKit SDK variable across different CDN builds
+const LK = window.LivekitClient || window.LiveKit;
+
 // --- Database Konfigurasi Koordinat Canva ---
 const FRAME_DATABASE = {
   green_lining: {
@@ -255,7 +258,6 @@ function switchView(viewId) {
     }
   });
 
-  // Atur visibilitas kontrol khusus Host / Guest
   if (viewId === 'view-config') {
     const btnStart = document.getElementById('btn-start-camera');
     const guestMsg = document.getElementById('guest-config-msg');
@@ -273,20 +275,28 @@ function switchView(viewId) {
   }
 }
 
-// --- Dynamic Token Fetcher ---
+// --- Dynamic Token Fetcher (FIXED) ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    const response = await fetch(`/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
+    // Mengirimkan kedua pasang nama parameter (roomName & room, identity & username) agar kompatibel dengan API backend apapun
+    const query = new URLSearchParams({
+      roomName: roomName,
+      room: roomName,
+      identity: identity,
+      username: identity
+    }).toString();
+
+    const response = await fetch(`/api/get-token?${query}`);
     const data = await response.json();
 
-    if (!response.ok) {
+    if (!response.ok || !data.token) {
       throw new Error(data.error || 'Gagal mengambil token dari server');
     }
 
     return data.token;
   } catch (error) {
     console.error('Error saat mengambil token LiveKit:', error);
-    alert('Gagal terhubung ke backend token.');
+    alert('Gagal terhubung ke backend token: ' + error.message);
     throw error;
   }
 }
@@ -301,16 +311,18 @@ async function initLiveKit(roomName, isHost) {
 
   try {
     const token = await fetchLiveKitToken(state.roomName, state.identity);
-    state.room = new LivekitClient.Room({
+    
+    // Inisialisasi Room menggunakan instance SDK global (LK)
+    state.room = new LK.Room({
       adaptiveStream: true,
       dynacast: true,
     });
 
-    state.room.on(LivekitClient.RoomEvent.TrackSubscribed, handleTrackSubscribed);
-    state.room.on(LivekitClient.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    state.room.on(LivekitClient.RoomEvent.DataReceived, handleDataReceived);
+    state.room.on(LK.RoomEvent.TrackSubscribed, handleTrackSubscribed);
+    state.room.on(LK.RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+    state.room.on(LK.RoomEvent.DataReceived, handleDataReceived);
     
-    state.room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+    state.room.on(LK.RoomEvent.ParticipantConnected, (participant) => {
       console.log('Pasangan terhubung:', participant?.identity);
       updateStatus('Pasangan Terhubung!', 'emerald');
       
@@ -339,7 +351,7 @@ async function initLiveKit(roomName, isHost) {
 
       state.room.remoteParticipants.forEach(participant => {
         participant.trackPublications.forEach(pub => {
-          if (pub.track && pub.track.kind === LivekitClient.Track.Kind.Video) {
+          if (pub.track && pub.track.kind === LK.Track.Kind.Video) {
             handleTrackSubscribed(pub.track, pub, participant);
           }
         });
@@ -364,14 +376,14 @@ function joinRoom() {
 }
 
 function handleTrackSubscribed(track, publication, participant) {
-  if (track.kind === LivekitClient.Track.Kind.Video) {
+  if (track.kind === LK.Track.Kind.Video) {
     track.attach(remoteVideo);
     remoteVideo.play().catch(e => console.warn('Autoplay remote video:', e));
   }
 }
 
 function handleTrackUnsubscribed(track, publication, participant) {
-  if (track.kind === LivekitClient.Track.Kind.Video) {
+  if (track.kind === LK.Track.Kind.Video) {
     track.detach(remoteVideo);
   }
 }
