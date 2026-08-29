@@ -6,7 +6,7 @@ const FRAME_DATABASE = {
   green_lining: {
     label: "Green Lining",
     2: {
-      imageSrc: './assets/Frame/2 grid/Green Lining.png',
+      imageSrc: './assets/Frame/2%20Grid/Green%20Lining.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -15,7 +15,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3 grid/Green Lining.png',
+      imageSrc: './assets/Frame/3%20Grid/Green%20Lining.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -25,7 +25,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4 grid/Green Lining.png',
+      imageSrc: './assets/Frame/4%20Grid/Green%20Lining.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -39,7 +39,7 @@ const FRAME_DATABASE = {
   sunset: {
     label: "Sunset",
     2: {
-      imageSrc: './assets/Frame/2 grid/Sunset.png',
+      imageSrc: './assets/Frame/2%20Grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -48,7 +48,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3 grid/Sunset.png',
+      imageSrc: './assets/Frame/3%20Grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -58,7 +58,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4 grid/Sunset.png',
+      imageSrc: './assets/Frame/4%20Grid/Sunset.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -72,7 +72,7 @@ const FRAME_DATABASE = {
   night_galaxy: {
     label: "Night Galaxy",
     2: {
-      imageSrc: './assets/Frame/2 grid/Night Galaxy.png',
+      imageSrc: './assets/Frame/2%20Grid/Night%20Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -81,7 +81,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3 grid/Night Galaxy.png',
+      imageSrc: './assets/Frame/3%20Grid/Night%20Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -91,7 +91,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4 grid/Night Galaxy.png',
+      imageSrc: './assets/Frame/4%20Grid/Night%20Galaxy.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
@@ -105,7 +105,7 @@ const FRAME_DATABASE = {
   dark_red: {
     label: "Dark Red",
     2: {
-      imageSrc: './assets/Frame/2 grid/Dark Red.png',
+      imageSrc: './assets/Frame/2%20Grid/Dark%20Red.png',
       canvasWidth: 1200,
       canvasHeight: 2100,
       slots: [
@@ -114,7 +114,7 @@ const FRAME_DATABASE = {
       ]
     },
     3: {
-      imageSrc: './assets/Frame/3 grid/Dark Red.png',
+      imageSrc: './assets/Frame/3%20Grid/Dark%20Red.png',
       canvasWidth: 1200,
       canvasHeight: 2940,
       slots: [
@@ -124,7 +124,7 @@ const FRAME_DATABASE = {
       ]
     },
     4: {
-      imageSrc: './assets/Frame/4 grid/Dark Red.png',
+      imageSrc: './assets/Frame/4%20Grid/Dark%20Red.png',
       canvasWidth: 1200,
       canvasHeight: 3780,
       slots: [
