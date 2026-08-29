@@ -1,0 +1,19 @@
+{
+  "name": "ldr-photobooth-server",
+  "version": "1.0.0",
+  "description": "Backend token generator untuk LDR Photobooth LiveKit",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "livekit-server-sdk": "^2.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
