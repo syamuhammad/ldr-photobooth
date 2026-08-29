@@ -251,8 +251,7 @@ function switchView(viewId) {
 async function fetchLiveKitToken(roomName, identity) {
   try {
     // Jalur relatif serbaguna: bekerja di localhost maupun domain Vercel
-    const apiUrl = `/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`;
-    const response = await fetch(apiUrl);
+    const response = await fetch(`/api/get-token?roomName=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
     const data = await response.json();
 
     if (!response.ok) {
