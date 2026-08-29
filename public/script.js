@@ -1,8 +1,7 @@
 // --- LiveKit Configuration ---
-const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud";[cite: 1]
+const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud";
 
 // --- Database Konfigurasi Koordinat Canva ---
-// Path gambar disesuaikan menggunakan %20 untuk spasi & huruf kapital sesuai folder di GitHub
 const FRAME_DATABASE = {
   green_lining: {
     label: "Green Lining",
