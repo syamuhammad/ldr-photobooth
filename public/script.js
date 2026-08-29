@@ -1,8 +1,14 @@
 // --- LiveKit Configuration ---
 const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud"; 
 
-// Access global LiveKit SDK variable across different CDN builds
-const LK = window.LivekitClient || window.LiveKit;
+// Fungsi helper untuk mendapatkan SDK LiveKit secara aman
+function getLiveKitSDK() {
+  const sdk = window.LivekitClient || window.LiveKit;
+  if (!sdk) {
+    throw new Error("SDK LiveKit belum terisi/loaded dari CDN. Pastikan tag script CDN LiveKit ada di HTML sebelum script.js.");
+  }
+  return sdk;
+}
 
 // --- Database Konfigurasi Koordinat Canva ---
 const FRAME_DATABASE = {
@@ -164,13 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   populateFrameOptions();
 
-  if (localVideo) {
-    localVideo.muted = true;
-    localVideo.playsInline = true;
-  }
-  if (remoteVideo) {
-    remoteVideo.playsInline = true;
-  }
+  // Konfigurasi elemen video agar tidak terblokir autoplay browser
+  [localVideo, remoteVideo].forEach(vid => {
+    if (vid) {
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.muted = true; // Diperlukan agar autoplay video streaming berjalan tanpa hambatan kebijakan browser
+    }
+  });
 
   document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('btn-create-room').addEventListener('click', createRoom);
@@ -275,10 +282,9 @@ function switchView(viewId) {
   }
 }
 
-// --- Dynamic Token Fetcher (FIXED) ---
+// --- Dynamic Token Fetcher ---
 async function fetchLiveKitToken(roomName, identity) {
   try {
-    // Mengirimkan kedua pasang nama parameter (roomName & room, identity & username) agar kompatibel dengan API backend apapun
     const query = new URLSearchParams({
       roomName: roomName,
       room: roomName,
@@ -310,9 +316,9 @@ async function initLiveKit(roomName, isHost) {
   updateStatus('Menghubungkan...', 'indigo');
 
   try {
+    const LK = getLiveKitSDK();
     const token = await fetchLiveKitToken(state.roomName, state.identity);
     
-    // Inisialisasi Room menggunakan instance SDK global (LK)
     state.room = new LK.Room({
       adaptiveStream: true,
       dynacast: true,
@@ -349,6 +355,7 @@ async function initLiveKit(roomName, isHost) {
         document.getElementById('guest-waiting-msg').classList.remove('hidden');
       }
 
+      // Sync track video pasangan jika sudah dipublikasikan sebelumnya
       state.room.remoteParticipants.forEach(participant => {
         participant.trackPublications.forEach(pub => {
           if (pub.track && pub.track.kind === LK.Track.Kind.Video) {
@@ -375,15 +382,18 @@ function joinRoom() {
   initLiveKit(targetId, false);
 }
 
+// --- Penanganan Track Video Pasangan (Mencegah Freeze) ---
 function handleTrackSubscribed(track, publication, participant) {
-  if (track.kind === LK.Track.Kind.Video) {
+  const LK = getLiveKitSDK();
+  if (track.kind === LK.Track.Kind.Video || (publication && publication.kind === 'video')) {
     track.attach(remoteVideo);
     remoteVideo.play().catch(e => console.warn('Autoplay remote video:', e));
   }
 }
 
 function handleTrackUnsubscribed(track, publication, participant) {
-  if (track.kind === LK.Track.Kind.Video) {
+  const LK = getLiveKitSDK();
+  if (track.kind === LK.Track.Kind.Video || (publication && publication.kind === 'video')) {
     track.detach(remoteVideo);
   }
 }
@@ -504,10 +514,12 @@ async function startPhotobooth() {
 async function startPhotoboothLocal() {
   try {
     if (state.room) {
+      // Aktifkan kamera lokal dan pastikan terhubung
       await state.room.localParticipant.setCameraEnabled(true);
-      const videoTrack = Array.from(state.room.localParticipant.videoTrackPublications.values())[0]?.track;
-      if (videoTrack) {
-        videoTrack.attach(localVideo);
+      
+      const tracks = Array.from(state.room.localParticipant.videoTrackPublications.values());
+      if (tracks.length > 0 && tracks[0].track) {
+        tracks[0].track.attach(localVideo);
         localVideo.play().catch(e => console.warn('Autoplay local video:', e));
       }
     }
@@ -526,6 +538,8 @@ function drawCover(targetCtx, element, x, y, w, h) {
   if (!element || element.readyState < 2) return;
   const nw = element.videoWidth || element.width;
   const nh = element.videoHeight || element.height;
+  if (!nw || !nh) return;
+
   const renderRatio = w / h;
   const sourceRatio = nw / nh;
 
@@ -550,7 +564,7 @@ function renderCanvasLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // 1. Kamera Lokal (di-mirror)
-  if (localVideo.readyState >= 2) {
+  if (localVideo && localVideo.readyState >= 2) {
     ctx.save();
     ctx.translate(canvas.width / 2, 0);
     ctx.scale(-1, 1);
@@ -562,7 +576,7 @@ function renderCanvasLoop() {
   }
 
   // 2. Kamera Pasangan
-  if (remoteVideo.readyState >= 2) {
+  if (remoteVideo && remoteVideo.readyState >= 2) {
     drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
   } else {
     ctx.fillStyle = '#0f172a';
