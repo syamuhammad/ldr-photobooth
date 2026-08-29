@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- LiveKit Client SDK -->
   <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
-  <!-- Library H.264 MP4 Encoder untuk ekspor MP4 -->
+  <!-- Library H.264 MP4 Encoder -->
   <script src="https://cdn.jsdelivr.net/npm/h264-mp4-encoder@1.0.12/emscripten/h264-mp4-encoder.web.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -62,9 +62,15 @@
         </div>
       </div>
 
+      <!-- Tombol Host -->
       <button id="btn-to-config" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-950/40">
-        Lanjut Pilih Frame →
+        Lanjut Pilih Frame (Host) →
       </button>
+
+      <!-- Tampilan Info Guest -->
+      <div id="guest-waiting-msg" class="hidden p-3 bg-indigo-950/50 border border-indigo-800/50 rounded-xl text-center text-xs text-indigo-300 animate-pulse">
+        ⏳ Terhubung sebagai Guest. Menunggu Host melanjutkan...
+      </div>
     </section>
 
     <!-- VIEW 2: FRAME & GRID SELECTION -->
@@ -74,11 +80,11 @@
         <div class="md:col-span-7 flex flex-col gap-6">
           <div>
             <h2 class="text-2xl font-bold mb-1">Pilih Layout & Frame Canva</h2>
-            <p class="text-sm text-slate-400">Pilih jumlah grid dan tema bingkai sesuai dengan moodmu!</p>
+            <p class="text-sm text-slate-400" id="config-subtitle">Pilih jumlah grid dan tema bingkai sesuai dengan moodmu!</p>
           </div>
 
           <!-- Grid Selector -->
-          <div>
+          <div id="grid-selector-container">
             <label class="block text-xs font-semibold text-slate-400 uppercase mb-3">Jumlah Grid Foto</label>
             <div class="grid grid-cols-3 gap-3">
               <button data-grid="2" class="grid-btn py-3 border border-indigo-500 bg-indigo-500/10 rounded-xl font-semibold text-sm">2 Grid</button>
@@ -88,16 +94,19 @@
           </div>
 
           <!-- Canva Frame Theme Selector -->
-          <div>
+          <div id="frame-selector-container">
             <label for="select-frame-theme" class="block text-xs font-semibold text-slate-400 uppercase mb-3">Desain Frame</label>
             <select id="select-frame-theme" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition cursor-pointer">
-              <!-- Elemen option diisi otomatis lewat JavaScript -->
             </select>
           </div>
 
           <button id="btn-start-camera" class="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 font-bold py-3.5 rounded-xl transition shadow-lg shadow-emerald-950/40">
             Mulai Kamera 📸
           </button>
+          
+          <div id="guest-config-msg" class="hidden text-center text-xs text-amber-400 bg-amber-950/30 p-3 rounded-xl border border-amber-800/40">
+            🔒 Pemilihan Frame dikontrol oleh Host. Menunggu Host memulai kamera...
+          </div>
         </div>
 
         <!-- Interactive Frame Preview -->
@@ -105,7 +114,6 @@
           <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Preview Layout</span>
           
           <div id="interactive-preview-box" class="relative w-full max-w-[320px] mx-auto bg-slate-900 rounded-lg border border-slate-700/80 shadow-inner overflow-hidden">
-            <!-- Elemen diisi via JavaScript -->
           </div>
         </div>
 
