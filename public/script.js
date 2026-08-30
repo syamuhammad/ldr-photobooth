@@ -1,7 +1,6 @@
 // --- LiveKit Configuration ---
 const LIVEKIT_URL = "wss://ldr-photobooth-i58hr8va.livekit.cloud"; 
 
-// Helper SDK LiveKit
 function getLiveKitSDK() {
   const sdk = window.LivekitClient || window.LiveKit;
   if (!sdk) {
@@ -154,9 +153,10 @@ const state = {
   gridCount: 2,
   frameTheme: 'green_lining',
   activeSlot: 0,
-  capturedSlots: [], // Berisi string base64 / URL gambar snapshot per slot
+  capturedSlots: [], // Menyimpan Object { videoBlobUrl, snapshotPngUrl } per slot
   isHost: false,
-  isLooping: false
+  isLooping: false,
+  remoteTrack: null
 };
 
 // --- DOM Elements ---
@@ -191,11 +191,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-start-camera')?.addEventListener('click', startPhotobooth);
   document.getElementById('btn-take-photo')?.addEventListener('click', triggerSyncedCapture);
   document.getElementById('btn-download-png')?.addEventListener('click', downloadFinalPhotostrip);
+  document.getElementById('btn-download-video')?.addEventListener('click', downloadFinalPhotostrip); // fallback
   document.getElementById('btn-reset')?.addEventListener('click', resetSession);
 
-  // Sembunyikan tombol download video lama jika ada di HTML agar tidak bikin bingung
   const btnVideo = document.getElementById('btn-download-video');
-  if (btnVideo) btnVideo.style.display = 'none';
+  if (btnVideo) btnVideo.style.display = 'inline-block';
 
   document.querySelectorAll('.grid-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -325,18 +325,12 @@ async function initLiveKit(roomName, isHost) {
       document.getElementById('display-room-id').classList.remove('hidden');
       updateStatus('Room Siap', 'indigo');
 
-      state.room.remoteParticipants.forEach(participant => {
-        participant.trackPublications.forEach(pub => {
-          if (pub.isSubscribed && pub.track && pub.track.kind === 'video') {
-            pub.track.attach(remoteVideo);
-            remoteVideo.play().catch(e => console.warn('Autoplay existing remote:', e));
-          }
-        });
-      });
+      attachExistingRemoteTracks();
     });
 
     state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === 'video') {
+        state.remoteTrack = track;
         track.attach(remoteVideo);
         remoteVideo.play().catch(e => console.warn('Autoplay remote:', e));
         updateStatus('Pasangan Terhubung!', 'emerald');
@@ -346,6 +340,7 @@ async function initLiveKit(roomName, isHost) {
     state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
       if (track.kind === 'video') {
         track.detach(remoteVideo);
+        state.remoteTrack = null;
       }
     });
 
@@ -353,6 +348,7 @@ async function initLiveKit(roomName, isHost) {
     
     state.room.on(LK.RoomEvent.ParticipantConnected, () => {
       updateStatus('Pasangan Terhubung!', 'emerald');
+      attachExistingRemoteTracks();
       if (state.isHost) {
         document.getElementById('btn-to-config')?.classList.remove('hidden');
         broadcastConfig();
@@ -363,6 +359,7 @@ async function initLiveKit(roomName, isHost) {
 
     state.room.on(LK.RoomEvent.ParticipantDisconnected, () => {
       updateStatus('Pasangan Terputus', 'rose');
+      state.remoteTrack = null;
     });
 
     await state.room.connect(LIVEKIT_URL, token);
@@ -371,6 +368,19 @@ async function initLiveKit(roomName, isHost) {
     console.error("LiveKit Error: ", err);
     updateStatus('Error Koneksi', 'rose');
   }
+}
+
+function attachExistingRemoteTracks() {
+  if (!state.room) return;
+  state.room.remoteParticipants.forEach(participant => {
+    participant.trackPublications.forEach(pub => {
+      if (pub.isSubscribed && pub.track && pub.track.kind === 'video') {
+        state.remoteTrack = pub.track;
+        pub.track.attach(remoteVideo);
+        remoteVideo.play().catch(e => console.warn('Autoplay existing remote:', e));
+      }
+    });
+  });
 }
 
 function createRoom() {
@@ -491,7 +501,7 @@ function broadcastConfig() {
   }
 }
 
-// --- Camera & Canvas Handling ---
+// --- Camera & Canvas Loop ---
 async function startPhotobooth() {
   if (state.isHost) {
     sendPeerData({ type: 'NAVIGATE_TO_CAMERA' });
@@ -510,6 +520,8 @@ async function startPhotoboothLocal() {
         localVideo.play().catch(e => console.warn('Autoplay local:', e));
       }
     }
+
+    attachExistingRemoteTracks();
 
     switchView('view-capture');
     renderSidebarSlots();
@@ -609,23 +621,57 @@ function runCountdown() {
     } else {
       clearInterval(timer);
       if (overlay) overlay.classList.add('hidden');
-      takeSnapshot();
+      recordLivePhotoSlot();
     }
   }, 1000);
 }
 
-// --- Snapshot Super Ringan & Anti-Freeze ---
-function takeSnapshot() {
-  // Ambil gambar langsung dari canvas secara instan tanpa MediaRecorder
-  const dataUrl = canvas.toDataURL('image/png');
+// --- Live Photo Recording (Merekam Video Klip Pendek 3 Detik Per Slot) ---
+function recordLivePhotoSlot() {
+  const recBadge = document.getElementById('recording-badge');
+  if (recBadge) recBadge.classList.remove('hidden');
 
-  state.capturedSlots[state.activeSlot] = dataUrl;
-  state.activeSlot++;
-  renderSidebarSlots();
-
-  if (state.activeSlot >= state.gridCount) {
-    setTimeout(showResultView, 600);
+  const stream = canvas.captureStream(25); // 25 FPS hemat daya
+  let mimeType = 'video/webm;codecs=vp8';
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'video/webm';
   }
+
+  const mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1500000 });
+  const chunks = [];
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    if (recBadge) recBadge.classList.add('hidden');
+    
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const videoBlobUrl = URL.createObjectURL(blob);
+    const snapshotPngUrl = canvas.toDataURL('image/png');
+
+    state.capturedSlots[state.activeSlot] = {
+      videoBlobUrl,
+      snapshotPngUrl
+    };
+
+    state.activeSlot++;
+    renderSidebarSlots();
+
+    if (state.activeSlot >= state.gridCount) {
+      setTimeout(showResultView, 600);
+    }
+  };
+
+  mediaRecorder.start();
+
+  // Rekam selama 3 detik untuk efek Live Photo
+  setTimeout(() => {
+    if (mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+  }, 3000);
 }
 
 function renderSidebarSlots() {
@@ -634,7 +680,7 @@ function renderSidebarSlots() {
   container.innerHTML = '';
 
   for (let i = 0; i < state.gridCount; i++) {
-    const imgData = state.capturedSlots[i];
+    const slotData = state.capturedSlots[i];
     const isActive = i === state.activeSlot;
 
     const slotDiv = document.createElement('div');
@@ -642,10 +688,10 @@ function renderSidebarSlots() {
       isActive ? 'border-rose-500 bg-rose-950/20' : 'border-slate-800 bg-slate-950'
     }`;
 
-    if (imgData) {
+    if (slotData) {
       slotDiv.innerHTML = `
-        <span class="text-xs font-bold text-slate-400">Slot ${i + 1} ✓</span>
-        <img src="${imgData}" class="w-full aspect-[4/3] object-cover rounded-lg border border-slate-800">
+        <span class="text-xs font-bold text-emerald-400">Slot ${i + 1} (Live Video) ✓</span>
+        <video src="${slotData.videoBlobUrl}" autoplay loop muted playsinline class="w-full aspect-[4/3] object-cover rounded-lg border border-slate-800"></video>
       `;
     } else {
       slotDiv.innerHTML = `
@@ -679,22 +725,27 @@ function showResultView() {
   overlayImg.onload = () => { overlayImg.style.display = 'block'; };
   overlayImg.src = config.imageSrc;
 
-  // Tampilkan hasil foto per slot di halaman hasil akhir
+  // Tampilkan Live Video animasi per slot di Photostrip Hasil Akhir
   videoContainer.innerHTML = '';
 
-  state.capturedSlots.forEach((imgData, i) => {
+  state.capturedSlots.forEach((slotData, i) => {
     const slotConfig = config.slots[i];
-    const img = document.createElement('img');
-    img.src = imgData;
     
-    img.style.position = 'absolute';
-    img.style.left = `${(slotConfig.x / config.canvasWidth) * 100}%`;
-    img.style.top = `${(slotConfig.y / config.canvasHeight) * 100}%`;
-    img.style.width = `${(slotConfig.w / config.canvasWidth) * 100}%`;
-    img.style.height = `${(slotConfig.h / config.canvasHeight) * 100}%`;
-    img.className = 'object-cover rounded';
+    const vid = document.createElement('video');
+    vid.src = slotData.videoBlobUrl;
+    vid.autoplay = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.playsInline = true;
+    
+    vid.style.position = 'absolute';
+    vid.style.left = `${(slotConfig.x / config.canvasWidth) * 100}%`;
+    vid.style.top = `${(slotConfig.y / config.canvasHeight) * 100}%`;
+    vid.style.width = `${(slotConfig.w / config.canvasWidth) * 100}%`;
+    vid.style.height = `${(slotConfig.h / config.canvasHeight) * 100}%`;
+    vid.className = 'object-cover rounded';
 
-    videoContainer.appendChild(img);
+    videoContainer.appendChild(vid);
   });
 }
 
@@ -719,7 +770,7 @@ async function downloadFinalPhotostrip() {
   outCtx.fillStyle = '#020617';
   outCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
 
-  const slotPromises = state.capturedSlots.map(imgData => loadImage(imgData));
+  const slotPromises = state.capturedSlots.map(slotData => loadImage(slotData.snapshotPngUrl));
   const framePromise = loadImage(config.imageSrc);
 
   const [slotImages, frameImg] = await Promise.all([
@@ -744,7 +795,7 @@ async function downloadFinalPhotostrip() {
   outCtx.fillText('LDR PHOTOBOOTH HD • ' + new Date().toLocaleDateString('id-ID'), config.canvasWidth / 2, config.canvasHeight - 40);
 
   const link = document.createElement('a');
-  link.download = `LDR-Photostrip-${Date.now()}.png`;
+  link.download = `LDR-Photostrip-Live-${Date.now()}.png`;
   link.href = outCanvas.toDataURL('image/png');
   link.click();
 }
@@ -756,5 +807,6 @@ function resetSession() {
   state.activeSlot = 0;
   state.capturedSlots = [];
   state.isLooping = false;
+  state.remoteTrack = null;
   switchView('view-connect');
 }
