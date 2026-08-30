@@ -191,7 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-start-camera')?.addEventListener('click', startPhotobooth);
   document.getElementById('btn-take-photo')?.addEventListener('click', triggerSyncedCapture);
   document.getElementById('btn-download-png')?.addEventListener('click', downloadFinalPhotostrip);
-  document.getElementById('btn-download-video')?.addEventListener('click', downloadFinalPhotostrip); // fallback
+  
+  // Handler terpisah untuk tombol download video
+  document.getElementById('btn-download-video')?.addEventListener('click', downloadFinalPhotostrip);
+  
   document.getElementById('btn-reset')?.addEventListener('click', resetSession);
 
   const btnVideo = document.getElementById('btn-download-video');
@@ -328,31 +331,30 @@ async function initLiveKit(roomName, isHost) {
       attachExistingRemoteTracks();
     });
 
-   state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
-  if (track.kind === 'video') {
-    state.remoteTrack = track;
-    
-    // Ambil elemen HTML secara eksplisit
-    const remoteVideoEl = document.getElementById('remote-video');
-    if (remoteVideoEl) {
-      track.attach(remoteVideoEl);
-      remoteVideoEl.play().catch(e => console.warn('Autoplay remote:', e));
-    }
-    
-    updateStatus('Pasangan Terhubung!', 'emerald');
-  }
-});
+    state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === 'video') {
+        state.remoteTrack = track;
+        
+        const remoteVideoEl = document.getElementById('remote-video');
+        if (remoteVideoEl) {
+          track.attach(remoteVideoEl);
+          remoteVideoEl.play().catch(e => console.warn('Autoplay remote:', e));
+        }
+        
+        updateStatus('Pasangan Terhubung!', 'emerald');
+      }
+    });
 
-state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
-  if (track.kind === 'video') {
-    const remoteVideoEl = document.getElementById('remote-video');
-    if (remoteVideoEl) {
-      track.detach(remoteVideoEl);
-    }
-    state.remoteTrack = null;
-    updateStatus('Pasangan Terputus', 'rose');
-  }
-});
+    state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
+      if (track.kind === 'video') {
+        const remoteVideoEl = document.getElementById('remote-video');
+        if (remoteVideoEl) {
+          track.detach(remoteVideoEl);
+        }
+        state.remoteTrack = null;
+        updateStatus('Pasangan Terputus', 'rose');
+      }
+    });
 
     state.room.on(LK.RoomEvent.DataReceived, handleDataReceived);
     
@@ -382,12 +384,15 @@ state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
 
 function attachExistingRemoteTracks() {
   if (!state.room) return;
+  const remoteVideoEl = document.getElementById('remote-video');
+  if (!remoteVideoEl) return;
+
   state.room.remoteParticipants.forEach(participant => {
     participant.trackPublications.forEach(pub => {
       if (pub.isSubscribed && pub.track && pub.track.kind === 'video') {
         state.remoteTrack = pub.track;
-        pub.track.attach(remoteVideo);
-        remoteVideo.play().catch(e => console.warn('Autoplay existing remote:', e));
+        pub.track.attach(remoteVideoEl);
+        remoteVideoEl.play().catch(e => console.warn('Autoplay existing remote:', e));
       }
     });
   });
@@ -811,6 +816,13 @@ async function downloadFinalPhotostrip() {
 }
 
 function resetSession() {
+  // Revoke Blob URLs untuk mengosongkan memori browser
+  state.capturedSlots.forEach(slot => {
+    if (slot && slot.videoBlobUrl) {
+      URL.revokeObjectURL(slot.videoBlobUrl);
+    }
+  });
+
   if (state.room) {
     state.room.disconnect();
   }
