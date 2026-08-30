@@ -156,7 +156,8 @@ const state = {
   capturedSlots: [], 
   isHost: false,
   isLooping: false,
-  remoteTrack: null
+  remoteTrack: null,
+  lastRenderTime: 0
 };
 
 // --- DOM Elements ---
@@ -165,12 +166,10 @@ const ctx = canvas ? canvas.getContext('2d') : null;
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 
-// Helper mendeteksi format video yang didukung browser
 function getSupportedMimeType() {
   const types = [
     'video/webm;codecs=vp8',
     'video/webm',
-    'video/mp4;codecs=h264',
     'video/mp4'
   ];
   for (const type of types) {
@@ -565,10 +564,9 @@ async function startPhotoboothLocal() {
 }
 
 function drawCover(targetCtx, element, x, y, w, h) {
-  if (!element || element.readyState < 2) return;
-  const nw = element.videoWidth || element.width;
-  const nh = element.videoHeight || element.height;
-  if (!nw || !nh) return;
+  if (!element || element.readyState < 2 || !element.videoWidth || !element.videoHeight) return;
+  const nw = element.videoWidth;
+  const nh = element.videoHeight;
 
   const renderRatio = w / h;
   const sourceRatio = nw / nh;
@@ -588,45 +586,53 @@ function drawCover(targetCtx, element, x, y, w, h) {
   targetCtx.drawImage(element, sx, sy, sw, sh, x, y, w, h);
 }
 
-function renderCanvasLoop() {
-  if (!state.isLooping || !ctx || !canvas) return;
+// Optimized Canvas Render Loop (30 FPS Throttle)
+function renderCanvasLoop(timestamp) {
+  if (!state.isLooping) return;
 
-  try {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Limit rendering ke 30 FPS untuk mencegah lag & freeze
+  if (timestamp - state.lastRenderTime >= 33) {
+    state.lastRenderTime = timestamp;
 
-    // 1. Kamera Lokal (Kiri, Mirrored)
-    if (localVideo && localVideo.readyState >= 2) {
-      ctx.save();
-      ctx.translate(canvas.width / 2, 0);
-      ctx.scale(-1, 1);
-      drawCover(ctx, localVideo, 0, 0, canvas.width / 2, canvas.height);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = '#1e293b';
-      ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
+    if (ctx && canvas) {
+      try {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. Kamera Lokal (Kiri, Mirrored)
+        if (localVideo && localVideo.readyState >= 2) {
+          ctx.save();
+          ctx.translate(canvas.width / 2, 0);
+          ctx.scale(-1, 1);
+          drawCover(ctx, localVideo, 0, 0, canvas.width / 2, canvas.height);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
+        }
+
+        // 2. Kamera Remote Pasangan (Kanan)
+        if (remoteVideo && remoteVideo.readyState >= 2) {
+          drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
+        } else {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+          ctx.fillStyle = '#64748b';
+          ctx.font = '16px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Menunggu Pasangan...', (canvas.width * 0.75), canvas.height / 2);
+        }
+
+        // Garis Pembatas Tengah
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+      } catch (err) {
+        console.error("Canvas draw error:", err);
+      }
     }
-
-    // 2. Kamera Remote Pasangan (Kanan)
-    if (remoteVideo && remoteVideo.readyState >= 2) {
-      drawCover(ctx, remoteVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
-    } else {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
-      ctx.fillStyle = '#64748b';
-      ctx.font = '16px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Menunggu Pasangan...', (canvas.width * 0.75), canvas.height / 2);
-    }
-
-    // Garis Pembatas Tengah
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(canvas.width / 2, 0);
-    ctx.lineTo(canvas.width / 2, canvas.height);
-    ctx.stroke();
-  } catch (err) {
-    console.error("Canvas draw error:", err);
   }
 
   requestAnimationFrame(renderCanvasLoop);
@@ -663,7 +669,15 @@ function recordLivePhotoSlot() {
   const recBadge = document.getElementById('recording-badge');
   if (recBadge) recBadge.classList.remove('hidden');
 
-  const stream = canvas.captureStream(25); 
+  let stream;
+  try {
+    stream = canvas.captureStream(25);
+  } catch (e) {
+    console.error("captureStream failed:", e);
+    if (recBadge) recBadge.classList.add('hidden');
+    return;
+  }
+
   const mimeType = getSupportedMimeType();
   const options = mimeType ? { mimeType } : {};
 
