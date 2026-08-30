@@ -328,21 +328,31 @@ async function initLiveKit(roomName, isHost) {
       attachExistingRemoteTracks();
     });
 
-    state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === 'video') {
-        state.remoteTrack = track;
-        track.attach(remoteVideo);
-        remoteVideo.play().catch(e => console.warn('Autoplay remote:', e));
-        updateStatus('Pasangan Terhubung!', 'emerald');
-      }
-    });
+   state.room.on(LK.RoomEvent.TrackSubscribed, (track) => {
+  if (track.kind === 'video') {
+    state.remoteTrack = track;
+    
+    // Ambil elemen HTML secara eksplisit
+    const remoteVideoEl = document.getElementById('remote-video');
+    if (remoteVideoEl) {
+      track.attach(remoteVideoEl);
+      remoteVideoEl.play().catch(e => console.warn('Autoplay remote:', e));
+    }
+    
+    updateStatus('Pasangan Terhubung!', 'emerald');
+  }
+});
 
-    state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
-      if (track.kind === 'video') {
-        track.detach(remoteVideo);
-        state.remoteTrack = null;
-      }
-    });
+state.room.on(LK.RoomEvent.TrackUnsubscribed, (track) => {
+  if (track.kind === 'video') {
+    const remoteVideoEl = document.getElementById('remote-video');
+    if (remoteVideoEl) {
+      track.detach(remoteVideoEl);
+    }
+    state.remoteTrack = null;
+    updateStatus('Pasangan Terputus', 'rose');
+  }
+});
 
     state.room.on(LK.RoomEvent.DataReceived, handleDataReceived);
     
